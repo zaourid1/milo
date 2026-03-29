@@ -354,7 +354,7 @@ async def voice_conversation(websocket: WebSocket, session_id: str):
 
     - Server sends JSON responses:
       {"type": "transcript", "text": "...", "raw": "...", "was_translated": bool, "correction": {...}|null}
-      {"type": "response", "text": "...", "response_english": "...", "pronunciation_guide": "...", "pronunciation_items": [...], "teaching_tip": "...", "suggestions": [...]}
+      {"type": "response", "text": "...", "response_english": "...", "quick_coach_tip": "...", "pronunciation_guide": "...", "pronunciation_items": [...], "teaching_tip": "...", "suggestions": [...]}
       {"type": "audio", "data": "<base64 audio>"}  → TTS (MP3 chunks)
       {"type": "audio_end"}
       {"type": "error", "message": "..."}
@@ -440,6 +440,7 @@ async def voice_conversation(websocket: WebSocket, session_id: str):
                         "type": "response",
                         "text": turn["response_spanish"],
                         "response_english": turn["response_english"],
+                        "quick_coach_tip": turn.get("quick_coach_tip"),
                         "pronunciation_guide": turn["pronunciation_guide"],
                         "pronunciation_items": turn.get("pronunciation_items") or [],
                         "teaching_tip": turn.get("teaching_tip"),
@@ -504,6 +505,7 @@ async def voice_conversation(websocket: WebSocket, session_id: str):
                     "type": "response",
                     "text": turn["response_spanish"],
                     "response_english": turn["response_english"],
+                    "quick_coach_tip": turn.get("quick_coach_tip"),
                     "pronunciation_guide": turn["pronunciation_guide"],
                     "pronunciation_items": turn.get("pronunciation_items") or [],
                     "teaching_tip": turn.get("teaching_tip"),

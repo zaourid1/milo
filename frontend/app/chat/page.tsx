@@ -45,6 +45,8 @@ type AssistantChatMessage = {
   role: "assistant";
   spanish: string;
   english: string;
+  /** English mid-conversation coach line before the in-character reply (not spoken in TTS). */
+  quickCoachTip: string | null;
   pronunciation: string | null;
   pronunciationItems: PronunciationItem[];
   teachingTip: string | null;
@@ -85,6 +87,28 @@ function GlassPanel({
 
 function uid() {
   return crypto.randomUUID();
+}
+
+/** Renders *word* segments as emphasized (model uses asterisks for TL words). */
+function QuickCoachBody({ text }: { text: string }) {
+  const parts = text.split(/(\*[^*]+\*)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+          return (
+            <em
+              key={i}
+              className="font-semibold not-italic text-violet-900"
+            >
+              {part.slice(1, -1)}
+            </em>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
 }
 
 function mapPronunciationItems(raw: unknown): PronunciationItem[] {
@@ -278,6 +302,9 @@ function SessionContent() {
                 role: "assistant",
                 spanish: msg.text || "",
                 english: msg.response_english || "",
+                quickCoachTip: msg.quick_coach_tip
+                  ? String(msg.quick_coach_tip).trim() || null
+                  : null,
                 pronunciation: msg.pronunciation_guide ?? null,
                 pronunciationItems: mapPronunciationItems(
                   msg.pronunciation_items
@@ -404,6 +431,7 @@ function SessionContent() {
       const opening = data.opening as {
         response_spanish?: string;
         response_english?: string;
+        quick_coach_tip?: string | null;
         pronunciation_guide?: string | null;
         pronunciation_items?: unknown;
         teaching_tip?: string | null;
@@ -417,6 +445,9 @@ function SessionContent() {
             role: "assistant",
             spanish: opening.response_spanish,
             english: opening.response_english || "",
+            quickCoachTip: opening.quick_coach_tip
+              ? String(opening.quick_coach_tip).trim() || null
+              : null,
             pronunciation: opening.pronunciation_guide ?? null,
             pronunciationItems: mapPronunciationItems(
               opening.pronunciation_items
@@ -436,6 +467,7 @@ function SessionContent() {
             role: "assistant",
             spanish: data.opening_message,
             english: "",
+            quickCoachTip: null,
             pronunciation: null,
             pronunciationItems: [],
             teachingTip: null,
@@ -699,6 +731,9 @@ function SessionContent() {
                 role: "assistant",
                 spanish: turn.response_spanish,
                 english: turn.response_english || "",
+                quickCoachTip: turn.quick_coach_tip
+                  ? String(turn.quick_coach_tip).trim() || null
+                  : null,
                 pronunciation: turn.pronunciation_guide ?? null,
                 pronunciationItems: mapPronunciationItems(
                   turn.pronunciation_items
@@ -851,6 +886,17 @@ function SessionContent() {
                 <span className="pl-1 text-[11px] font-semibold text-stone-500">
                   {partner}
                 </span>
+                {m.quickCoachTip ? (
+                  <div className="max-w-[92%] rounded-2xl border border-violet-300/60 bg-gradient-to-br from-violet-50 to-white px-3.5 py-2.5 text-[13px] leading-snug text-stone-800 shadow-sm">
+                    <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-violet-700">
+                      <span aria-hidden>🧠</span>
+                      Quick tip
+                    </p>
+                    <p className="text-[13px] leading-relaxed">
+                      <QuickCoachBody text={m.quickCoachTip} />
+                    </p>
+                  </div>
+                ) : null}
                 <div className="max-w-[92%] rounded-[1.25rem] rounded-bl-md border border-stone-200/80 bg-white px-4 py-2.5 text-[15px] leading-snug text-stone-900 shadow-md">
                   {m.spanish}
                 </div>

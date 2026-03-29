@@ -70,6 +70,7 @@ Return ONE JSON object only (no markdown). Keys:
 - teaching_tip: string — ONE short English sentence teaching a pattern (grammar, usage, or intonation) from THIS reply — NOT a repeat of response_english.
 - suggestions: array of 2 to 4 strings — short natural {target_lang} lines the learner could say next.
 - correction: null OR object with "original" (their flawed {target_lang} if any), "corrected" (fixed), "note" (one short English grammar tip). Use when they attempted {target_lang} with clear errors; null if only English was used or text was fine.
+- quick_coach_tip: null OR string — SMART INTERRUPTION (elite UX): when their line has a clear, fixable slip (wrong tense, wrong verb form, missing small word), ONE punchy English line you "say" first as coach — e.g. "Quick tip: use *fui* instead of *ir* for past tense 👍". Wrap target-language words in single asterisks for emphasis. Max ~25 words. Must be null if there is nothing worth interrupting for. If non-null, set correction to null (do not duplicate) and keep response_spanish purely in-character in {target_lang} — do not repeat the grammar lecture in Spanish/French/Arabic.
 """
 
 
@@ -103,6 +104,12 @@ def _parse_turn(raw: str) -> dict[str, Any]:
     items = _parse_pronunciation_items(data)
     tip = str(data.get("teaching_tip", "")).strip() or None
 
+    qct = str(data.get("quick_coach_tip", "")).strip() or None
+    if qct:
+        if len(qct) > 240:
+            qct = qct[:237] + "…"
+        corr = None
+
     return {
         "user_spanish": str(data.get("user_spanish", "")).strip(),
         "user_was_english": bool(data.get("user_was_english", False)),
@@ -113,6 +120,7 @@ def _parse_turn(raw: str) -> dict[str, Any]:
         "teaching_tip": tip,
         "suggestions": suggestions[:4],
         "correction": corr,
+        "quick_coach_tip": qct,
     }
 
 
@@ -135,6 +143,7 @@ def _fallback_turn(user_raw: str) -> dict[str, Any]:
             "Gracias.",
         ],
         "correction": None,
+        "quick_coach_tip": None,
     }
 
 
@@ -159,7 +168,9 @@ Role in this session: {persona}
 
 {bm}
 
-Always stay in character for the scenario. Never break immersion with meta talk unless the learner is completely stuck — then one short encouraging line in {lang_name} is OK.
+Always stay in character for the scenario in response_spanish. The quick_coach_tip field is the ONLY place for brief English coach-asides (wrong-tense fixes, etc.); never dump those lessons into response_spanish.
+
+Never break immersion with meta talk in the target language unless the learner is completely stuck — then one short encouraging line in {lang_name} is OK.
 
 You are also a pronunciation coach: pronunciation_items must be filled every turn with real fragments from response_spanish so the learner can hear and mimic. teaching_tip should highlight one learnable pattern.
 
@@ -246,6 +257,7 @@ For this opening ONLY:
 - user_spanish: "" (empty string)
 - user_was_english: false
 - correction: null
+- quick_coach_tip: null
 - suggestions: 3–4 very easy {lang_name} phrases they might say next (e.g. greetings, simple requests).
 """
 
@@ -265,6 +277,7 @@ For this opening ONLY:
         data["user_spanish"] = ""
         data["user_was_english"] = False
         data["correction"] = None
+        data["quick_coach_tip"] = None
         if not data["response_spanish"]:
             data["response_spanish"] = (
                 "¡Hola! Bienvenido. ¿En qué puedo ayudarte?"
@@ -297,4 +310,5 @@ For this opening ONLY:
             "teaching_tip": "The rolled 'r' in perro takes practice; in greetings it's often soft or tap-like.",
             "suggestions": ["Hola", "Un café, por favor", "Gracias", "¿Cuánto cuesta?"],
             "correction": None,
+            "quick_coach_tip": None,
         }
