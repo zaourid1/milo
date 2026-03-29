@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+openai
+python-dotenv
+websockets
+python-multipart
+elevenlabs
+httpx
+pydantic
+sqlalchemy
+bcrypt
+pyjwt
