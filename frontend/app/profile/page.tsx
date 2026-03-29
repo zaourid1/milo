@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { API_BASE } from "../config";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function ProfilePage() {
       return;
     }
 
-    fetch("http://localhost:8000/auth/me", {
+    fetch(`${API_BASE}/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
@@ -45,7 +46,7 @@ export default function ProfilePage() {
     const token = localStorage.getItem("token");
 
     try {
-      const res = await fetch("http://localhost:8000/auth/me", {
+      const res = await fetch(`${API_BASE}/auth/me`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

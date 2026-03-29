@@ -42,7 +42,12 @@ ASSISTANT_NAMES = {
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    # Add your Vercel production URL here after deploying:
+    # "https://milo-xxxxx.vercel.app",
+    os.getenv("FRONTEND_URL", ""),
 ]
+# Filter out empty strings
+CORS_ORIGINS = [o for o in CORS_ORIGINS if o]
 
 # Auth
 JWT_SECRET = os.getenv("JWT_SECRET", "milo-dev-secret-change-in-production")

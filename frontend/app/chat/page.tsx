@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { API_BASE, WS_BASE } from "../config";
 
 const LANGUAGE_LABELS: Record<string, string> = {
   french: "French",
@@ -260,7 +261,7 @@ function SessionContent() {
 
   const connectWebSocket = useCallback(
     (sid: string) => {
-      const ws = new WebSocket(`ws://localhost:8000/ws/voice/${sid}`);
+      const ws = new WebSocket(`${WS_BASE}/ws/voice/${sid}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -388,7 +389,7 @@ function SessionContent() {
       if (!t) return;
       setTtsBusyKey(busyKey);
       try {
-        const res = await fetch("http://localhost:8000/tts/preview", {
+        const res = await fetch(`${API_BASE}/tts/preview`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: t, language }),
@@ -413,7 +414,7 @@ function SessionContent() {
 
     setConnectionStatus("connecting");
     try {
-      const res = await fetch("http://localhost:8000/session/create", {
+      const res = await fetch(`${API_BASE}/session/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -700,7 +701,7 @@ function SessionContent() {
         return;
       }
       setIsProcessing(true);
-      fetch("http://localhost:8000/chat/text", {
+      fetch(`${API_BASE}/chat/text`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -776,7 +777,7 @@ function SessionContent() {
         user_turns: userMsgs.length,
         words_practiced: words,
       });
-      void fetch("http://localhost:8000/stats/practice", {
+      void fetch(`${API_BASE}/stats/practice`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

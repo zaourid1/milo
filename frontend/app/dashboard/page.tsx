@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "../config";
 
 type StatsSummary = {
   hours_learned: number;
