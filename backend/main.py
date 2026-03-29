@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import CORS_ORIGINS, LANGUAGE_NAMES
-from database import init_db, get_db, User
+from database import init_db, get_db, User, PracticeSession
+from services.stats import aggregate_user_stats
 from auth import hash_password, verify_password, create_token, get_current_user
 from services.stt import transcribe_audio, transcribe_audio_auto
 from services.tts import synthesize_speech, stream_speech
@@ -48,6 +49,19 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     beginner_mode: bool | None = None
+
+
+class TtsPreviewRequest(BaseModel):
+    text: str
+    language: str = "spanish"
+
+
+class PracticeLogRequest(BaseModel):
+    duration_seconds: int = 0
+    language: str = ""
+    scenario: str = ""
+    user_turns: int = 0
+    words_practiced: int = 0
 
 
 class Message(BaseModel):
@@ -142,6 +156,38 @@ async def get_me(user: User = Depends(get_current_user)):
     }
 
 
+@app.post("/stats/practice")
+async def log_practice_session(
+    req: PracticeLogRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Record a completed practice session (call when the user leaves chat while logged in)."""
+    duration = max(0, min(int(req.duration_seconds), 86400 * 5))
+    turns = max(0, int(req.user_turns))
+    words = max(0, int(req.words_practiced))
+    row = PracticeSession(
+        user_id=user.id,
+        duration_seconds=duration,
+        language=(req.language or "")[:48],
+        scenario=(req.scenario or "")[:64],
+        user_turns=turns,
+        words_practiced=words,
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/stats/summary")
+async def get_stats_summary(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Aggregated stats for the dashboard."""
+    return aggregate_user_stats(db, user.id)
+
+
 @app.put("/auth/me")
 async def update_me(
     req: UpdateProfileRequest,
@@ -206,6 +252,25 @@ async def create_session(req: SessionCreate):
         "opening_message": reply_es,
         "opening_audio": opening_audio_b64,
     }
+
+
+@app.post("/tts/preview")
+async def tts_preview(req: TtsPreviewRequest):
+    """Short TTS clip for pronunciation “Listen” buttons (same voice as session language)."""
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    if len(text) > 2000:
+        raise HTTPException(status_code=400, detail="text too long")
+    try:
+        audio_bytes = await synthesize_speech(text, req.language)
+        return {
+            "audio": base64.b64encode(audio_bytes).decode("utf-8"),
+            "format": "audio/mpeg",
+        }
+    except Exception as e:
+        print(f"TTS preview failed: {e}")
+        raise HTTPException(status_code=502, detail="TTS preview failed") from e
 
 
 @app.post("/chat")
@@ -289,7 +354,7 @@ async def voice_conversation(websocket: WebSocket, session_id: str):
 
     - Server sends JSON responses:
       {"type": "transcript", "text": "...", "raw": "...", "was_translated": bool, "correction": {...}|null}
-      {"type": "response", "text": "...", "response_english": "...", "pronunciation_guide": "...", "suggestions": [...]}
+      {"type": "response", "text": "...", "response_english": "...", "pronunciation_guide": "...", "pronunciation_items": [...], "teaching_tip": "...", "suggestions": [...]}
       {"type": "audio", "data": "<base64 audio>"}  → TTS (MP3 chunks)
       {"type": "audio_end"}
       {"type": "error", "message": "..."}
@@ -376,6 +441,8 @@ async def voice_conversation(websocket: WebSocket, session_id: str):
                         "text": turn["response_spanish"],
                         "response_english": turn["response_english"],
                         "pronunciation_guide": turn["pronunciation_guide"],
+                        "pronunciation_items": turn.get("pronunciation_items") or [],
+                        "teaching_tip": turn.get("teaching_tip"),
                         "suggestions": turn["suggestions"],
                     })
 
@@ -438,6 +505,8 @@ async def voice_conversation(websocket: WebSocket, session_id: str):
                     "text": turn["response_spanish"],
                     "response_english": turn["response_english"],
                     "pronunciation_guide": turn["pronunciation_guide"],
+                    "pronunciation_items": turn.get("pronunciation_items") or [],
+                    "teaching_tip": turn.get("teaching_tip"),
                     "suggestions": turn["suggestions"],
                 })
 

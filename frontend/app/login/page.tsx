@@ -41,22 +41,22 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="bg-gray-100 min-h-screen flex flex-col items-center justify-center px-4">
+    <div className="bg-[#e8e0d6] min-h-screen flex flex-col items-center justify-center px-4">
       {/* Logo */}
-      <div className="flex items-center gap-3 mb-10">
-        <div className="w-12 h-12 rounded-full bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-200">
-          <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+      <Link href="/" className="flex items-center gap-2.5 mb-10">
+        <div className="w-11 h-11 rounded-full bg-stone-900 flex items-center justify-center">
+          <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
           </svg>
         </div>
-        <span className="font-bold text-gray-900 text-2xl">Milo</span>
-      </div>
+        <span className="font-bold text-stone-900 text-xl">Milo</span>
+      </Link>
 
       {/* Login Card */}
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-stone-200/60 p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h1>
-          <p className="text-gray-500 text-sm">Continue your language learning journey</p>
+          <h1 className="text-3xl font-bold text-stone-900 mb-2">Welcome Back</h1>
+          <p className="text-stone-400 text-sm">Continue your language learning journey</p>
         </div>
 
         {error && (
@@ -67,41 +67,41 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-semibold text-gray-800 mb-1.5">Email</label>
+            <label className="block text-sm font-semibold text-stone-700 mb-1.5">Email</label>
             <input
               type="email"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm placeholder-gray-400 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
+              className="w-full px-4 py-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm placeholder-stone-400 outline-none focus:border-stone-900 focus:ring-2 focus:ring-stone-200 transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-800 mb-1.5">Password</label>
+            <label className="block text-sm font-semibold text-stone-700 mb-1.5">Password</label>
             <input
               type="password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm placeholder-gray-400 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
+              className="w-full px-4 py-3 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm placeholder-stone-400 outline-none focus:border-stone-900 focus:ring-2 focus:ring-stone-200 transition-all"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 hover:from-blue-400 hover:to-violet-500 disabled:opacity-50 text-white font-semibold text-base transition-all shadow-md shadow-violet-200 active:scale-[0.98] mt-2"
+            className="w-full py-3.5 rounded-full bg-stone-900 hover:bg-stone-800 disabled:opacity-50 text-white font-semibold text-sm transition-all active:scale-[0.98] mt-2"
           >
             {loading ? "Logging in..." : "Log In"}
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
+        <p className="text-center text-sm text-stone-400 mt-6">
           Don&apos;t have an account?{" "}
-          <Link href="/signup" className="text-violet-600 font-semibold hover:text-violet-500 transition-colors">
+          <Link href="/signup" className="text-stone-900 font-semibold hover:underline transition-colors">
             Sign Up
           </Link>
         </p>

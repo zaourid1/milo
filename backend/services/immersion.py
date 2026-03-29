@@ -17,6 +17,43 @@ from config import (
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
+def _minimal_pronunciation_items(response_spanish: str) -> list[dict[str, str]]:
+    """If the model omits items, split reply into 2 chunks for TTS practice."""
+    t = (response_spanish or "").strip()
+    if not t:
+        return []
+    parts = [p.strip() for p in t.replace("?", "?|").replace("!", "!|").split("|") if p.strip()]
+    if not parts:
+        parts = [t]
+    out: list[dict[str, str]] = []
+    for p in parts[:2]:
+        if len(p) < 2:
+            continue
+        short = p if len(p) <= 48 else p[:45].rsplit(" ", 1)[0] + "…"
+        out.append(
+            {
+                "phrase": short,
+                "say_like": "Tap listen — mimic stress & rhythm",
+            }
+        )
+    return out[:2] if out else [{"phrase": t[:40], "say_like": "Tap listen — mimic stress & rhythm"}]
+
+
+def _parse_pronunciation_items(data: dict[str, Any]) -> list[dict[str, str]]:
+    raw = data.get("pronunciation_items")
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for x in raw[:6]:
+        if not isinstance(x, dict):
+            continue
+        phrase = str(x.get("phrase", "")).strip()
+        say_like = str(x.get("say_like", x.get("sayLike", ""))).strip()
+        if phrase and say_like:
+            out.append({"phrase": phrase, "say_like": say_like})
+    return out[:5]
+
+
 def _assistant_name(language: str) -> str:
     return ASSISTANT_NAMES.get(language, "Milo")
 
@@ -28,7 +65,9 @@ Return ONE JSON object only (no markdown). Keys:
 - user_was_english: boolean — true if their raw message was mostly English.
 - response_spanish: string — your in-character reply ONLY in {target_lang}. 1–3 short spoken sentences.
 - response_english: string — natural English translation of response_spanish.
-- pronunciation_guide: string or null — brief hints for tricky words in response_spanish (stress/sounds), or null.
+- pronunciation_guide: string — one-line summary of how the whole reply flows in English-like sounds (optional extra), not empty if possible.
+- pronunciation_items: array of 2 to 5 objects, REQUIRED for learning UX. Each object: "phrase" (exact short substring copied from response_spanish, 1–6 words) and "say_like" (hyphenated pseudo-English syllables; put the STRESSED syllable in CAPS, e.g. "keh-REH-sah" or "oon kah-FEH").
+- teaching_tip: string — ONE short English sentence teaching a pattern (grammar, usage, or intonation) from THIS reply — NOT a repeat of response_english.
 - suggestions: array of 2 to 4 strings — short natural {target_lang} lines the learner could say next.
 - correction: null OR object with "original" (their flawed {target_lang} if any), "corrected" (fixed), "note" (one short English grammar tip). Use when they attempted {target_lang} with clear errors; null if only English was used or text was fine.
 """
@@ -55,12 +94,23 @@ def _parse_turn(raw: str) -> dict[str, Any]:
         if not corr["corrected"]:
             corr = None
 
+    pg = data.get("pronunciation_guide")
+    if pg is not None:
+        pg = str(pg).strip() or None
+    else:
+        pg = None
+
+    items = _parse_pronunciation_items(data)
+    tip = str(data.get("teaching_tip", "")).strip() or None
+
     return {
         "user_spanish": str(data.get("user_spanish", "")).strip(),
         "user_was_english": bool(data.get("user_was_english", False)),
         "response_spanish": str(data.get("response_spanish", "")).strip(),
         "response_english": str(data.get("response_english", "")).strip(),
-        "pronunciation_guide": data.get("pronunciation_guide"),
+        "pronunciation_guide": pg,
+        "pronunciation_items": items,
+        "teaching_tip": tip,
         "suggestions": suggestions[:4],
         "correction": corr,
     }
@@ -72,7 +122,12 @@ def _fallback_turn(user_raw: str) -> dict[str, Any]:
         "user_was_english": False,
         "response_spanish": "Perdón, un momento — ¿puedes repetir?",
         "response_english": "Sorry, one moment — can you repeat?",
-        "pronunciation_guide": None,
+        "pronunciation_guide": "pehr-DOHN, oon moh-MEHN-toh — keh-PEH-dehs rreh-peh-TEER",
+        "pronunciation_items": [
+            {"phrase": "Perdón", "say_like": "pehr-DOHN"},
+            {"phrase": "¿puedes repetir?", "say_like": "keh-PEH-dehs rreh-peh-teer"},
+        ],
+        "teaching_tip": "Questions in Spanish often start with an upside-down ¿ and rise in pitch at the end.",
         "suggestions": [
             "Sí, claro.",
             "¿Puedes ayudarme?",
@@ -105,6 +160,8 @@ Role in this session: {persona}
 {bm}
 
 Always stay in character for the scenario. Never break immersion with meta talk unless the learner is completely stuck — then one short encouraging line in {lang_name} is OK.
+
+You are also a pronunciation coach: pronunciation_items must be filled every turn with real fragments from response_spanish so the learner can hear and mimic. teaching_tip should highlight one learnable pattern.
 
 {_json_only_schema_hint(lang_name)}
 """
@@ -149,6 +206,15 @@ def run_immersion_turn(
             data["response_spanish"] = "¿Podrías decirlo de otra forma?"
         if not data["response_english"]:
             data["response_english"] = data["response_spanish"]
+        lang_name = LANGUAGE_NAMES.get(language, language.capitalize())
+        if not data.get("pronunciation_items"):
+            data["pronunciation_items"] = _minimal_pronunciation_items(
+                data["response_spanish"]
+            )
+        if not data.get("teaching_tip"):
+            data["teaching_tip"] = (
+                f"In {lang_name}, match the melody you hear — exaggerate vowels slightly when you repeat."
+            )
         return data
     except (json.JSONDecodeError, Exception) as e:
         print(f"[immersion] turn error: {e}")
@@ -207,6 +273,14 @@ For this opening ONLY:
             )
         if not data["response_english"]:
             data["response_english"] = data["response_spanish"]
+        if not data.get("pronunciation_items"):
+            data["pronunciation_items"] = _minimal_pronunciation_items(
+                data["response_spanish"]
+            )
+        if not data.get("teaching_tip"):
+            data["teaching_tip"] = (
+                "Greetings often use ¿Qué…? to invite the other person to share what they want."
+            )
         return data
     except Exception as e:
         print(f"[immersion] opening error: {e}")
@@ -215,7 +289,12 @@ For this opening ONLY:
             "user_was_english": False,
             "response_spanish": "¡Hola! Bienvenido. ¿Qué te gustaría?",
             "response_english": "Hi! Welcome. What would you like?",
-            "pronunciation_guide": "¡Hola! = OH-lah",
+            "pronunciation_guide": "OH-lah — bee-ehn-veh-NEE-doh — keh teh goos-tah-REE-ah",
+            "pronunciation_items": [
+                {"phrase": "¡Hola!", "say_like": "OH-lah"},
+                {"phrase": "¿Qué te gustaría?", "say_like": "keh teh goos-tah-REE-ah"},
+            ],
+            "teaching_tip": "The rolled 'r' in perro takes practice; in greetings it's often soft or tap-like.",
             "suggestions": ["Hola", "Un café, por favor", "Gracias", "¿Cuánto cuesta?"],
             "correction": None,
         }

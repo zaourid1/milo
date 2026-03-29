@@ -38,12 +38,16 @@ type UserChatMessage = {
   correction?: Correction | null;
 };
 
+type PronunciationItem = { phrase: string; sayLike: string };
+
 type AssistantChatMessage = {
   id: string;
   role: "assistant";
   spanish: string;
   english: string;
   pronunciation: string | null;
+  pronunciationItems: PronunciationItem[];
+  teachingTip: string | null;
   suggestions: string[];
 };
 
@@ -83,6 +87,19 @@ function uid() {
   return crypto.randomUUID();
 }
 
+function mapPronunciationItems(raw: unknown): PronunciationItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PronunciationItem[] = [];
+  for (const x of raw) {
+    if (!x || typeof x !== "object") continue;
+    const o = x as Record<string, unknown>;
+    const phrase = String(o.phrase ?? "").trim();
+    const sayLike = String(o.say_like ?? o.sayLike ?? "").trim();
+    if (phrase && sayLike) out.push({ phrase, sayLike });
+  }
+  return out;
+}
+
 function SessionContent() {
   const router = useRouter();
   const params = useSearchParams();
@@ -97,7 +114,6 @@ function SessionContent() {
 
   const [beginnerMode, setBeginnerMode] = useState(initialBeginner);
   const [micOn, setMicOn] = useState(false);
-  const [cameraOn, setCameraOn] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -108,11 +124,19 @@ function SessionContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [miloSpeaking, setMiloSpeaking] = useState(false);
-  const [isReady, setIsReady] = useState(false);
+  const [ttsBusyKey, setTtsBusyKey] = useState<string | null>(null);
+  const [pronunciationOpenById, setPronunciationOpenById] = useState<
+    Record<string, boolean>
+  >({});
   const beginnerModeRef = useRef(beginnerMode);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const togglePronunciationPanel = useCallback((messageId: string) => {
+    setPronunciationOpenById((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
+  }, []);
+
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -128,6 +152,8 @@ function SessionContent() {
   const audioQueueRef = useRef<Blob[]>([]);
   const isPlayingRef = useRef(false);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  /** Separate from main Mateo queue so “Listen” works while / after TTS. */
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     conversationRef.current?.scrollTo({
@@ -157,28 +183,6 @@ function SessionContent() {
 
   const fmt = (s: number) =>
     `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
-
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      cameraStreamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-    } catch (e) {
-      console.error("Camera denied:", e);
-    }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
-    cameraStreamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-  }, []);
-
-  useEffect(() => {
-    if (cameraOn) startCamera();
-    else stopCamera();
-    return () => stopCamera();
-  }, [cameraOn, startCamera, stopCamera]);
 
   const playMp3Blob = useCallback((blob: Blob): Promise<void> => {
     return new Promise((resolve) => {
@@ -230,8 +234,6 @@ function SessionContent() {
     [drainAudioQueue]
   );
 
-  const [sessionStarting, setSessionStarting] = useState(false);
-
   const connectWebSocket = useCallback(
     (sid: string) => {
       const ws = new WebSocket(`ws://localhost:8000/ws/voice/${sid}`);
@@ -277,6 +279,12 @@ function SessionContent() {
                 spanish: msg.text || "",
                 english: msg.response_english || "",
                 pronunciation: msg.pronunciation_guide ?? null,
+                pronunciationItems: mapPronunciationItems(
+                  msg.pronunciation_items
+                ),
+                teachingTip: msg.teaching_tip
+                  ? String(msg.teaching_tip)
+                  : null,
                 suggestions: Array.isArray(msg.suggestions)
                   ? msg.suggestions
                   : [],
@@ -323,13 +331,59 @@ function SessionContent() {
     [drainAudioQueue]
   );
 
+  const playBase64Preview = useCallback((b64: string): Promise<void> => {
+    return new Promise((resolve) => {
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+      if (!previewAudioRef.current) previewAudioRef.current = new Audio();
+      const audio = previewAudioRef.current;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+      audio.src = url;
+      audio.play().catch(() => {
+        URL.revokeObjectURL(url);
+        resolve();
+      });
+    });
+  }, []);
+
+  const playTtsSnippet = useCallback(
+    async (text: string, busyKey: string) => {
+      const t = text.trim();
+      if (!t) return;
+      setTtsBusyKey(busyKey);
+      try {
+        const res = await fetch("http://localhost:8000/tts/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: t, language }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (data.audio) await playBase64Preview(data.audio);
+      } catch (e) {
+        console.error("[ImmersionAI] TTS preview failed:", e);
+      } finally {
+        setTtsBusyKey(null);
+      }
+    },
+    [language, playBase64Preview]
+  );
+
   const handleStartSession = useCallback(async () => {
     if (!audioElRef.current) audioElRef.current = new Audio();
     audioElRef.current.src =
       "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYlmOZLAAAAAAAAAAAAAAAAAAAA";
     audioElRef.current.play().catch(() => {});
 
-    setSessionStarting(true);
     setConnectionStatus("connecting");
     try {
       const res = await fetch("http://localhost:8000/session/create", {
@@ -351,6 +405,8 @@ function SessionContent() {
         response_spanish?: string;
         response_english?: string;
         pronunciation_guide?: string | null;
+        pronunciation_items?: unknown;
+        teaching_tip?: string | null;
         suggestions?: string[];
       } | null;
 
@@ -362,6 +418,12 @@ function SessionContent() {
             spanish: opening.response_spanish,
             english: opening.response_english || "",
             pronunciation: opening.pronunciation_guide ?? null,
+            pronunciationItems: mapPronunciationItems(
+              opening.pronunciation_items
+            ),
+            teachingTip: opening.teaching_tip
+              ? String(opening.teaching_tip)
+              : null,
             suggestions: Array.isArray(opening.suggestions)
               ? opening.suggestions
               : [],
@@ -375,6 +437,8 @@ function SessionContent() {
             spanish: data.opening_message,
             english: "",
             pronunciation: null,
+            pronunciationItems: [],
+            teachingTip: null,
             suggestions: [],
           },
         ]);
@@ -382,19 +446,19 @@ function SessionContent() {
 
       if (data.opening_audio) playBase64Audio(data.opening_audio);
       connectWebSocket(data.session_id);
-      setIsReady(true);
     } catch (e) {
       console.error("[ImmersionAI] Session create failed:", e);
       setConnectionStatus("error");
-    } finally {
-      setSessionStarting(false);
     }
   }, [beginnerMode, language, scenario, playBase64Audio, connectWebSocket]);
 
+  // Auto-start session on mount
   useEffect(() => {
+    handleStartSession();
     return () => {
       wsRef.current?.close();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sendRecording = useCallback(async () => {
@@ -636,6 +700,12 @@ function SessionContent() {
                 spanish: turn.response_spanish,
                 english: turn.response_english || "",
                 pronunciation: turn.pronunciation_guide ?? null,
+                pronunciationItems: mapPronunciationItems(
+                  turn.pronunciation_items
+                ),
+                teachingTip: turn.teaching_tip
+                  ? String(turn.teaching_tip)
+                  : null,
                 suggestions: turn.suggestions || [],
               },
             ]);
@@ -654,8 +724,34 @@ function SessionContent() {
 
   const handleEndSession = () => {
     stopRecording();
-    stopCamera();
     wsRef.current?.close();
+
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (token && sessionId) {
+      const userMsgs = messages.filter((m) => m.role === "user");
+      const words = userMsgs.reduce((n, m) => {
+        const parts = m.spanish.trim().split(/\s+/).filter(Boolean);
+        return n + parts.length;
+      }, 0);
+      const body = JSON.stringify({
+        duration_seconds: seconds,
+        language,
+        scenario,
+        user_turns: userMsgs.length,
+        words_practiced: words,
+      });
+      void fetch("http://localhost:8000/stats/practice", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    }
+
     router.push("/dashboard");
   };
 
@@ -664,70 +760,12 @@ function SessionContent() {
     setMicOn((prev) => !prev);
   };
 
-  if (!isReady) {
-    return (
-      <div className="relative min-h-screen overflow-hidden bg-[#FAF6F0] text-stone-800">
-        <AmbientBackdrop />
-        <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-5 py-16">
-          <div className="mx-auto w-full max-w-lg text-center">
-            <div className="relative mx-auto mb-10 flex h-40 w-40 items-center justify-center [perspective:900px]">
-              <div className="absolute inset-0 animate-glow-breathe rounded-full bg-amber-400/30 blur-2xl" />
-              <div className="relative flex h-32 w-32 animate-float-soft items-center justify-center rounded-full bg-gradient-to-br from-amber-100 via-white to-violet-100 shadow-orb ring-[6px] ring-white/90">
-                <div className="absolute inset-3 rounded-full bg-gradient-to-tr from-amber-200/50 to-transparent" />
-                <span className="relative text-5xl" aria-hidden>
-                  ✨
-                </span>
-              </div>
-            </div>
-
-            <GlassPanel className="px-8 py-10 shadow-clay-lg">
-              <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-amber-600/90">
-                ImmersionAI
-              </p>
-              <h1 className="bg-gradient-to-r from-stone-900 via-stone-800 to-stone-600 bg-clip-text text-3xl font-extrabold leading-tight text-transparent sm:text-4xl">
-                Guided {langLabel} with {partner}
-              </h1>
-              <p className="mt-4 text-base leading-relaxed text-stone-600">
-                <span className="font-semibold text-stone-800">
-                  {scenarioLabel}
-                </span>
-                — every line has English help, quick replies, and gentle
-                corrections. Speak or type; zero Spanish required to start.
-              </p>
-              <label className="mt-6 flex cursor-pointer items-center justify-center gap-2 text-sm font-medium text-stone-700">
-                <input
-                  type="checkbox"
-                  checked={beginnerMode}
-                  onChange={(e) => setBeginnerMode(e.target.checked)}
-                  className="h-4 w-4 rounded border-stone-300 text-amber-600 focus:ring-amber-500"
-                />
-                Beginner mode (English OK + full coaching)
-              </label>
-              <button
-                type="button"
-                onClick={handleStartSession}
-                disabled={sessionStarting}
-                className="mt-6 w-full rounded-full bg-stone-900 py-4 text-base font-semibold text-white shadow-[0_4px_0_rgba(0,0,0,0.35),0_20px_40px_-12px_rgba(0,0,0,0.35)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] enabled:hover:scale-[1.02] disabled:opacity-60 sm:w-auto sm:px-14"
-              >
-                {sessionStarting ? "Starting…" : "Start learning"}
-              </button>
-              <p className="mt-5 text-xs text-stone-500">
-                Unlocks audio — turn your speakers up.
-              </p>
-            </GlassPanel>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="relative flex min-h-screen flex-col bg-[#E8E4DC] text-stone-900">
+    <div className="relative flex min-h-screen flex-col bg-[#e8e0d6] text-stone-900">
       <AmbientBackdrop />
-
-      <header className="relative z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-white/50 bg-white/40 px-4 py-3 backdrop-blur-xl sm:px-5">
+      <header className="relative z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-stone-300/50 bg-[#e8e0d6]/90 px-4 py-3 backdrop-blur-xl sm:px-5">
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">
             ImmersionAI
           </p>
           <h1 className="truncate text-base font-extrabold sm:text-lg">
@@ -736,7 +774,7 @@ function SessionContent() {
           <p className="truncate text-xs text-stone-500">{scenarioLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex cursor-pointer items-center gap-2 rounded-full border border-white/80 bg-white/70 px-3 py-1.5 text-xs font-semibold shadow-sm">
+          <label className="flex cursor-pointer items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold shadow-sm">
             <input
               type="checkbox"
               checked={beginnerMode}
@@ -745,7 +783,7 @@ function SessionContent() {
             />
             Beginner
           </label>
-          <span className="rounded-full bg-white/70 px-2.5 py-1 text-xs font-mono text-stone-600">
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-mono text-stone-600 border border-stone-200">
             {fmt(seconds)}
           </span>
           <span
@@ -769,21 +807,9 @@ function SessionContent() {
       </header>
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-        {cameraOn && (
-          <div className="absolute right-3 top-3 z-30 h-24 w-20 overflow-hidden rounded-2xl border-2 border-white shadow-lg sm:h-28 sm:w-24">
-            <video
-              ref={videoRef}
-              autoPlay
-              muted
-              playsInline
-              className="h-full w-full -scale-x-100 object-cover"
-            />
-          </div>
-        )}
-
         <div
           ref={conversationRef}
-          className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-32 sm:px-6"
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-28 sm:px-6"
         >
           {connectionStatus === "error" && (
             <p className="rounded-2xl bg-rose-100 px-4 py-3 text-sm text-rose-900">
@@ -828,29 +854,115 @@ function SessionContent() {
                 <div className="max-w-[92%] rounded-[1.25rem] rounded-bl-md border border-stone-200/80 bg-white px-4 py-2.5 text-[15px] leading-snug text-stone-900 shadow-md">
                   {m.spanish}
                 </div>
+                <div className="mt-0.5 max-w-[92%] pl-0.5">
+                  <button
+                    type="button"
+                    disabled={!!ttsBusyKey}
+                    onClick={() => playTtsSnippet(m.spanish, `${m.id}-line`)}
+                    className="text-[11px] font-semibold text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-900 disabled:opacity-40"
+                  >
+                    {ttsBusyKey === `${m.id}-line`
+                      ? "Loading audio…"
+                      : "Hear full line"}
+                  </button>
+                </div>
                 {m.english ? (
-                  <p className="max-w-[92%] pl-1 text-[13px] leading-relaxed text-stone-500">
+                  <p className="max-w-[92%] pl-1 text-[13px] leading-snug text-stone-500">
+                    <span className="font-medium text-stone-600">
+                      Meaning:{" "}
+                    </span>
                     {m.english}
                   </p>
                 ) : null}
-                {m.pronunciation ? (
-                  <p className="max-w-[92%] pl-1 text-[11px] italic text-violet-700/90">
-                    {m.pronunciation}
+                {m.teachingTip ? (
+                  <p className="max-w-[92%] rounded-lg border border-amber-200/70 bg-amber-50/80 px-2 py-1.5 text-[12px] leading-snug text-amber-950">
+                    <span className="mr-1 font-bold text-amber-800">
+                      Pattern:
+                    </span>
+                    {m.teachingTip}
                   </p>
                 ) : null}
+                {(m.pronunciation || m.pronunciationItems.length > 0) && (
+                  <div className="max-w-[92%] rounded-xl border border-violet-200/80 bg-violet-50/50">
+                    <button
+                      type="button"
+                      aria-expanded={!!pronunciationOpenById[m.id]}
+                      onClick={() => togglePronunciationPanel(m.id)}
+                      className="flex w-full cursor-pointer items-center justify-between gap-2 px-2.5 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-violet-900"
+                    >
+                      <span>
+                        Pronunciation
+                        {m.pronunciationItems.length > 0
+                          ? ` · ${m.pronunciationItems.length} clips`
+                          : ""}{" "}
+                        <span className="font-normal normal-case text-violet-600">
+                          (tap to expand)
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-violet-500" aria-hidden>
+                        {pronunciationOpenById[m.id] ? "▼" : "▶"}
+                      </span>
+                    </button>
+                    {pronunciationOpenById[m.id] ? (
+                      <div className="border-t border-violet-100 px-2.5 pb-2 pt-1">
+                        <p className="mb-1.5 text-[10px] text-violet-700/90">
+                          CAPS = stressed syllable. Tap listen to mimic.
+                        </p>
+                        {m.pronunciation ? (
+                          <p className="mb-2 font-mono text-[10px] leading-relaxed text-stone-700">
+                            {m.pronunciation}
+                          </p>
+                        ) : null}
+                        <ul className="space-y-1.5">
+                          {m.pronunciationItems.map((item, i) => {
+                            const key = `${m.id}-p-${i}`;
+                            return (
+                              <li
+                                key={key}
+                                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-white/90 px-2 py-1.5"
+                              >
+                                <span className="min-w-0 flex-1 text-[13px] font-medium text-stone-900">
+                                  {item.phrase}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={!!ttsBusyKey}
+                                  onClick={() =>
+                                    playTtsSnippet(item.phrase, key)
+                                  }
+                                  className="shrink-0 rounded-md bg-violet-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-violet-500 disabled:opacity-40"
+                                >
+                                  {ttsBusyKey === key ? "…" : "Listen"}
+                                </button>
+                                <span className="w-full font-mono text-[10px] tracking-wide text-violet-900 sm:w-auto">
+                                  {item.sayLike}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
                 {m.suggestions.length > 0 && (
-                  <div className="mt-1 flex max-w-[92%] flex-wrap gap-1.5 pl-0.5">
-                    {m.suggestions.map((s, i) => (
-                      <button
-                        key={`${m.id}-s-${i}`}
-                        type="button"
-                        disabled={isProcessing || !sessionId}
-                        onClick={() => sendTextMessage(s)}
-                        className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-left text-xs font-medium text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:opacity-40"
-                      >
-                        {s}
-                      </button>
-                    ))}
+                  <div className="mt-1 max-w-[92%] pl-0.5">
+                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-stone-500">
+                      Try saying
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {m.suggestions.map((s, i) => (
+                        <button
+                          key={`${m.id}-s-${i}`}
+                          type="button"
+                          disabled={isProcessing || !sessionId}
+                          onClick={() => sendTextMessage(s)}
+                          className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-left text-xs font-medium text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:opacity-40"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -869,7 +981,7 @@ function SessionContent() {
           )}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-white/60 bg-white/85 px-3 py-3 backdrop-blur-xl sm:px-5">
+        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-stone-300/50 bg-[#e8e0d6]/90 px-3 py-3 backdrop-blur-xl sm:px-5">
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <button
               type="button"
@@ -890,20 +1002,6 @@ function SessionContent() {
                 )}
               </svg>
             </button>
-            <button
-              type="button"
-              onClick={() => setCameraOn((c) => !c)}
-              title="Camera"
-              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 transition ${
-                cameraOn
-                  ? "border-violet-300 bg-violet-100 text-violet-800"
-                  : "border-stone-200 bg-white text-stone-400"
-              }`}
-            >
-              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
-              </svg>
-            </button>
             <div className="relative min-w-0 flex-1">
               <input
                 type="text"
@@ -917,7 +1015,7 @@ function SessionContent() {
                 }}
                 placeholder={
                   beginnerMode
-                    ? "Type in English or Spanish…"
+                    ? `Type in English or ${langLabel}…`
                     : `Type in ${langLabel}…`
                 }
                 disabled={!sessionId || connectionStatus !== "connected"}

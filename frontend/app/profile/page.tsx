@@ -77,82 +77,82 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="bg-gray-950 min-h-screen flex items-center justify-center text-white">
-        <p className="text-gray-400">Loading...</p>
+      <div className="bg-[#e8e0d6] min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-stone-300 border-t-stone-900 rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="bg-gray-950 min-h-screen text-white">
+    <div className="bg-[#e8e0d6] min-h-screen text-stone-900">
       {/* Navbar */}
-      <nav className="border-b border-gray-800 px-6 py-4">
+      <nav className="border-b border-stone-300/50 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-stone-900 flex items-center justify-center">
               <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
               </svg>
             </div>
-            <span className="font-semibold text-sm">Milo</span>
+            <span className="font-bold text-sm">Milo</span>
           </Link>
-          <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white transition-colors flex items-center gap-1">
+          <Link href="/dashboard" className="text-sm text-stone-500 hover:text-stone-900 transition-colors flex items-center gap-1">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
             </svg>
-            Back to Dashboard
+            Back
           </Link>
         </div>
       </nav>
 
       <div className="max-w-2xl mx-auto px-6 py-10">
-        <h1 className="text-3xl font-bold mb-8">Profile Settings</h1>
+        <h1 className="text-3xl font-bold mb-8 text-stone-900">Profile Settings</h1>
 
         {/* Avatar */}
         <div className="flex items-center gap-5 mb-10">
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-3xl font-bold shrink-0">
+          <div className="w-20 h-20 rounded-full bg-stone-900 flex items-center justify-center text-3xl font-bold text-white shrink-0">
             {name.charAt(0).toUpperCase()}
           </div>
           <div>
-            <div className="text-lg font-semibold">{name}</div>
-            <div className="text-sm text-gray-400">{email}</div>
+            <div className="text-lg font-semibold text-stone-900">{name}</div>
+            <div className="text-sm text-stone-400">{email}</div>
           </div>
         </div>
 
         {error && (
-          <div className="mb-6 px-4 py-3 rounded-xl bg-red-900/30 border border-red-800 text-red-400 text-sm">
+          <div className="mb-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm">
             {error}
           </div>
         )}
 
         {/* Form */}
-        <div className="space-y-6">
+        <div className="bg-white rounded-2xl border border-stone-200/60 p-6 space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-2">Display Name</label>
+            <label className="block text-sm font-semibold text-stone-600 mb-2">Display Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-gray-900 border border-gray-800 text-white text-sm focus:outline-none focus:border-violet-500 transition-colors"
+              className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 text-sm focus:outline-none focus:border-stone-900 focus:ring-2 focus:ring-stone-200 transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-2">Email</label>
+            <label className="block text-sm font-semibold text-stone-600 mb-2">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-gray-900 border border-gray-800 text-white text-sm focus:outline-none focus:border-violet-500 transition-colors"
+              className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 text-sm focus:outline-none focus:border-stone-900 focus:ring-2 focus:ring-stone-200 transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-2">Native Language</label>
+            <label className="block text-sm font-semibold text-stone-600 mb-2">Native Language</label>
             <select
               value={nativeLanguage}
               onChange={(e) => setNativeLanguage(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-gray-900 border border-gray-800 text-white text-sm focus:outline-none focus:border-violet-500 transition-colors appearance-none"
+              className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 text-sm focus:outline-none focus:border-stone-900 focus:ring-2 focus:ring-stone-200 transition-all appearance-none"
             >
               <option value="english">English</option>
               <option value="french">French</option>
@@ -163,21 +163,21 @@ export default function ProfilePage() {
 
           <button
             onClick={handleSave}
-            className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-all active:scale-[0.98]"
+            className="w-full py-3 rounded-full bg-stone-900 hover:bg-stone-800 text-white font-semibold text-sm transition-all active:scale-[0.98]"
           >
             {saved ? "Saved!" : "Save Changes"}
           </button>
         </div>
 
         {/* Account actions */}
-        <div className="mt-12 pt-8 border-t border-gray-800 flex items-center justify-between">
+        <div className="mt-10 pt-8 border-t border-stone-300/50 flex items-center justify-between">
           <button
             onClick={handleLogout}
-            className="px-4 py-2.5 rounded-xl border border-gray-700 text-gray-300 hover:bg-gray-800 text-sm transition-colors"
+            className="px-5 py-2.5 rounded-full border border-stone-300 text-stone-600 hover:bg-white text-sm transition-colors"
           >
             Log Out
           </button>
-          <button className="px-4 py-2.5 rounded-xl border border-red-800 text-red-400 hover:bg-red-900/20 text-sm transition-colors">
+          <button className="px-5 py-2.5 rounded-full border border-red-300 text-red-500 hover:bg-red-50 text-sm transition-colors">
             Delete Account
           </button>
         </div>
